@@ -54,17 +54,15 @@ const lastAssistantWithTokens = (messages: Message[]) => {
 const premium = (parts: Part[] | undefined) => {
   const list =
     parts?.filter((part): part is Extract<Part, { type: "step-finish" }> => part.type === "step-finish") ?? []
-  let found = false
-  const cost = list.reduce((sum, part) => {
+  const costs = list.flatMap((part) => {
     const value = part.metadata?.["copilot"]
-    if (!value || typeof value !== "object" || Array.isArray(value)) return sum
+    if (!value || typeof value !== "object" || Array.isArray(value)) return []
     const next = value["premiumRequestCost"]
-    if (typeof next !== "number" || !Number.isFinite(next)) return sum
-    found = true
-    return sum + next
-  }, 0)
+    if (typeof next !== "number" || !Number.isFinite(next)) return []
+    return [next]
+  })
 
-  const last = [...list].reverse().find((part) => {
+  const last = list.findLast((part) => {
     const value = part.metadata?.["copilot"]
     return value && typeof value === "object" && !Array.isArray(value) && value["premiumRequestBalance"] !== undefined
   })
@@ -75,7 +73,7 @@ const premium = (parts: Part[] | undefined) => {
       : undefined
 
   return {
-    cost: found ? cost : undefined,
+    cost: costs.length ? costs.reduce((sum, value) => sum + value, 0) : undefined,
     remaining,
   }
 }

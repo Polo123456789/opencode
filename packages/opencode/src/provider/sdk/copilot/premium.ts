@@ -10,7 +10,7 @@ const num = (value: unknown) => {
   if (Number.isFinite(parsed)) return parsed
 }
 
-const read = (headers: Headers | Record<string, string> | undefined, key: string) => {
+const header = (headers: Headers | Record<string, string> | undefined, key: string) => {
   if (!headers) return
   if (headers instanceof Headers) return headers.get(key) ?? headers.get(key.toLowerCase()) ?? undefined
   return headers[key] ?? headers[key.toLowerCase()]
@@ -41,8 +41,8 @@ const cost = (value: string | undefined) => {
 
 export function premium(headers: Headers | Record<string, string> | undefined): Meta | undefined {
   const meta: Meta = {
-    premiumRequestCost: cost(read(headers, "copilot-usage")),
-    premiumRequestBalance: num(read(headers, "x-ratelimit-remaining-premium")),
+    premiumRequestCost: cost(header(headers, "copilot-usage")),
+    premiumRequestBalance: num(header(headers, "x-ratelimit-remaining-premium")),
   }
 
   if (meta.premiumRequestCost === undefined && meta.premiumRequestBalance === undefined) return

@@ -256,16 +256,16 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV3 {
     }
 
     // provider metadata:
-    const extra = await this.config.metadataExtractor?.extractMetadata?.({
+    const extracted = await this.config.metadataExtractor?.extractMetadata?.({
       parsedBody: rawResponse,
     })
     const copilot = {
-      ...((extra?.copilot as Record<string, unknown> | undefined) ?? {}),
+      ...((extracted?.copilot as Record<string, unknown> | undefined) ?? {}),
       ...(premium(responseHeaders) ?? {}),
     }
     const providerMetadata: SharedV3ProviderMetadata = {
       [this.providerOptionsName]: {},
-      ...extra,
+      ...extracted,
       ...(Object.keys(copilot).length ? { copilot } : {}),
     }
     const completionTokenDetails = responseBody.usage?.completion_tokens_details
@@ -680,15 +680,15 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV3 {
               })
             }
 
-            const extra = metadataExtractor?.buildMetadata()
+            const extracted = metadataExtractor?.buildMetadata()
             const copilot = {
-              ...((extra?.copilot as Record<string, unknown> | undefined) ?? {}),
+              ...((extracted?.copilot as Record<string, unknown> | undefined) ?? {}),
               ...(premium(responseHeaders) ?? {}),
               ...(reasoningOpaque ? { reasoningOpaque } : {}),
             }
             const providerMetadata: SharedV3ProviderMetadata = {
               [providerOptionsName]: {},
-              ...extra,
+              ...extracted,
               ...(Object.keys(copilot).length ? { copilot } : {}),
             }
             if (usage.completionTokensDetails.acceptedPredictionTokens != null) {
