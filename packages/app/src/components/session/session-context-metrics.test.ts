@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { getSessionContextMetrics } from "./session-context-metrics"
 
 const assistant = (
@@ -35,6 +35,36 @@ const user = (id: string) => {
     cost: 0,
     time: { created: 1 },
   } as unknown as Message
+}
+
+const step = (id: string, messageID: string, cost?: number, remaining?: number) => {
+  return {
+    id,
+    type: "step-finish",
+    sessionID: "s1",
+    messageID,
+    reason: "stop",
+    cost: 0,
+    tokens: {
+      total: 0,
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: {
+        read: 0,
+        write: 0,
+      },
+    },
+    metadata:
+      cost === undefined && remaining === undefined
+        ? undefined
+        : {
+            copilot: {
+              premiumRequestCost: cost,
+              premiumRequestBalance: remaining,
+            },
+          },
+  } as unknown as Part
 }
 
 describe("getSessionContextMetrics", () => {
@@ -97,5 +127,15 @@ describe("getSessionContextMetrics", () => {
 
     expect(metrics.totalCost).toBe(0)
     expect(metrics.context).toBeUndefined()
+  })
+
+  test("reads premium request metadata from step parts", () => {
+    const messages = [assistant("a1", { input: 40, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "p-1", "m-1")]
+    const metrics = getSessionContextMetrics(messages, [], {
+      a1: [step("p1", "a1", 0.25, 99), step("p2", "a1", 1, 98)],
+    })
+
+    expect(metrics.context?.premium.cost).toBe(1.25)
+    expect(metrics.context?.premium.remaining).toBe(98)
   })
 })

@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
+import type { AssistantMessage, Message, Part } from "@opencode-ai/sdk/v2/client"
 
 type Provider = {
   id: string
@@ -27,6 +27,10 @@ type Context = {
   cacheWrite: number
   total: number
   usage: number | null
+  premium: {
+    cost: number | undefined
+    remaining: number | undefined
+  }
 }
 
 type Metrics = {
@@ -47,7 +51,40 @@ const lastAssistantWithTokens = (messages: Message[]) => {
   }
 }
 
-const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
+const premium = (parts: Part[] | undefined) => {
+  const list =
+    parts?.filter((part): part is Extract<Part, { type: "step-finish" }> => part.type === "step-finish") ?? []
+  let found = false
+  const cost = list.reduce((sum, part) => {
+    const value = part.metadata?.["copilot"]
+    if (!value || typeof value !== "object" || Array.isArray(value)) return sum
+    const next = value["premiumRequestCost"]
+    if (typeof next !== "number" || !Number.isFinite(next)) return sum
+    found = true
+    return sum + next
+  }, 0)
+
+  const last = [...list].reverse().find((part) => {
+    const value = part.metadata?.["copilot"]
+    return value && typeof value === "object" && !Array.isArray(value) && value["premiumRequestBalance"] !== undefined
+  })
+  const value = last?.metadata?.["copilot"]
+  const remaining =
+    value && typeof value === "object" && !Array.isArray(value) && typeof value["premiumRequestBalance"] === "number"
+      ? value["premiumRequestBalance"]
+      : undefined
+
+  return {
+    cost: found ? cost : undefined,
+    remaining,
+  }
+}
+
+const build = (
+  messages: Message[] = [],
+  providers: Provider[] = [],
+  parts: Record<string, Part[] | undefined> = {},
+): Metrics => {
   const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
   const message = lastAssistantWithTokens(messages)
   if (!message) return { totalCost, context: undefined }
@@ -56,6 +93,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
   const total = tokenTotal(message)
+  const meta = premium(parts[message.id])
 
   return {
     totalCost,
@@ -73,10 +111,15 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       cacheWrite: message.tokens.cache.write,
       total,
       usage: limit ? Math.round((total / limit) * 100) : null,
+      premium: meta,
     },
   }
 }
 
-export function getSessionContextMetrics(messages: Message[] = [], providers: Provider[] = []) {
-  return build(messages, providers)
+export function getSessionContextMetrics(
+  messages: Message[] = [],
+  providers: Provider[] = [],
+  parts: Record<string, Part[] | undefined> = {},
+) {
+  return build(messages, providers, parts)
 }

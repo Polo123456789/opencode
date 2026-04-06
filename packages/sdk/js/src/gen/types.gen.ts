@@ -320,6 +320,9 @@ export type StepFinishPart = {
   reason: string
   snapshot?: string
   cost: number
+  metadata?: {
+    [key: string]: unknown
+  }
   tokens: {
     input: number
     output: number

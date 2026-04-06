@@ -52,11 +52,20 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all()))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all(), sync.data.part))
   const context = createMemo(() => metrics().context)
   const cost = createMemo(() => {
     return usd().format(metrics().totalCost)
   })
+  const premium = createMemo(() => context()?.premium)
+  const premiumCost = createMemo(() => premium()?.cost)
+  const premiumBalance = createMemo(() => premium()?.remaining)
+  const num = createMemo(
+    () =>
+      new Intl.NumberFormat(language.intl(), {
+        maximumFractionDigits: 2,
+      }),
+  )
 
   const openContext = () => {
     if (!params.id) return
@@ -98,6 +107,18 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         <span class="text-text-invert-strong">{cost()}</span>
         <span class="text-text-invert-base">{language.t("context.usage.cost")}</span>
       </div>
+      <Show when={premiumCost() !== undefined}>
+        <div class="flex items-center gap-2">
+          <span class="text-text-invert-strong">{num().format(premiumCost() ?? 0)}</span>
+          <span class="text-text-invert-base">Premium cost</span>
+        </div>
+      </Show>
+      <Show when={premiumBalance() !== undefined}>
+        <div class="flex items-center gap-2">
+          <span class="text-text-invert-strong">{num().format(premiumBalance() ?? 0)}</span>
+          <span class="text-text-invert-base">Premium balance</span>
+        </div>
+      </Show>
     </div>
   )
 

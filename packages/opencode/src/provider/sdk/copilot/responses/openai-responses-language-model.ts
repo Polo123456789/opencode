@@ -30,6 +30,7 @@ import type { OpenAIResponsesIncludeOptions, OpenAIResponsesIncludeValue } from 
 import { prepareResponsesTools } from "./openai-responses-prepare-tools"
 import type { OpenAIResponsesModelId } from "./openai-responses-settings"
 import { localShellInputSchema } from "./tool/local-shell"
+import { premium } from "../premium"
 
 const webSearchCallItem = z.object({
   type: z.literal("web_search_call"),
@@ -723,8 +724,10 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
       }
     }
 
+    const copilot = premium(responseHeaders)
     const providerMetadata: SharedV3ProviderMetadata = {
       openai: { responseId: response.id },
+      ...(copilot ? { copilot } : {}),
     }
 
     if (logprobs.length > 0) {
@@ -1304,10 +1307,12 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
               currentTextId = null
             }
 
+            const copilot = premium(responseHeaders)
             const providerMetadata: SharedV3ProviderMetadata = {
               openai: {
                 responseId,
               },
+              ...(copilot ? { copilot } : {}),
             }
 
             if (logprobs.length > 0) {

@@ -29,6 +29,7 @@ import { type OpenAICompatibleChatModelId, openaiCompatibleProviderOptions } fro
 import { defaultOpenAICompatibleErrorStructure, type ProviderErrorStructure } from "../openai-compatible-error"
 import type { MetadataExtractor } from "./openai-compatible-metadata-extractor"
 import { prepareTools } from "./openai-compatible-prepare-tools"
+import { premium } from "../premium"
 
 export type OpenAICompatibleChatConfig = {
   provider: string
@@ -255,11 +256,17 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV3 {
     }
 
     // provider metadata:
+    const extra = await this.config.metadataExtractor?.extractMetadata?.({
+      parsedBody: rawResponse,
+    })
+    const copilot = {
+      ...((extra?.copilot as Record<string, unknown> | undefined) ?? {}),
+      ...(premium(responseHeaders) ?? {}),
+    }
     const providerMetadata: SharedV3ProviderMetadata = {
       [this.providerOptionsName]: {},
-      ...(await this.config.metadataExtractor?.extractMetadata?.({
-        parsedBody: rawResponse,
-      })),
+      ...extra,
+      ...(Object.keys(copilot).length ? { copilot } : {}),
     }
     const completionTokenDetails = responseBody.usage?.completion_tokens_details
     if (completionTokenDetails?.accepted_prediction_tokens != null) {
@@ -673,11 +680,16 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV3 {
               })
             }
 
+            const extra = metadataExtractor?.buildMetadata()
+            const copilot = {
+              ...((extra?.copilot as Record<string, unknown> | undefined) ?? {}),
+              ...(premium(responseHeaders) ?? {}),
+              ...(reasoningOpaque ? { reasoningOpaque } : {}),
+            }
             const providerMetadata: SharedV3ProviderMetadata = {
               [providerOptionsName]: {},
-              // Include reasoning_opaque for Copilot multi-turn reasoning
-              ...(reasoningOpaque ? { copilot: { reasoningOpaque } } : {}),
-              ...metadataExtractor?.buildMetadata(),
+              ...extra,
+              ...(Object.keys(copilot).length ? { copilot } : {}),
             }
             if (usage.completionTokensDetails.acceptedPredictionTokens != null) {
               providerMetadata[providerOptionsName].acceptedPredictionTokens =

@@ -278,6 +278,7 @@ export namespace SessionProcessor {
                 type: "step-finish",
                 tokens: usage.tokens,
                 cost: usage.cost,
+                metadata: value.providerMetadata,
               })
               yield* session.updateMessage(ctx.assistantMessage)
               if (ctx.snapshot) {
