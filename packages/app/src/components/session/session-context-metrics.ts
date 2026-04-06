@@ -51,15 +51,15 @@ const lastAssistantWithTokens = (messages: Message[]) => {
   }
 }
 
-const premium = (parts: Part[] | undefined) => {
+const extract = (parts: Part[] | undefined) => {
   const list =
     parts?.filter((part): part is Extract<Part, { type: "step-finish" }> => part.type === "step-finish") ?? []
   const costs = list.flatMap((part) => {
     const value = part.metadata?.["copilot"]
     if (!value || typeof value !== "object" || Array.isArray(value)) return []
-    const next = value["premiumRequestCost"]
-    if (typeof next !== "number" || !Number.isFinite(next)) return []
-    return [next]
+    const cost = value["premiumRequestCost"]
+    if (typeof cost !== "number" || !Number.isFinite(cost)) return []
+    return [cost]
   })
 
   const last = list.findLast((part) => {
@@ -91,7 +91,7 @@ const build = (
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
   const total = tokenTotal(message)
-  const meta = premium(parts[message.id])
+  const meta = extract(parts[message.id])
 
   return {
     totalCost,

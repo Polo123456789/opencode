@@ -57,10 +57,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const cost = createMemo(() => {
     return usd().format(metrics().totalCost)
   })
-  const premium = createMemo(() => context()?.premium)
-  const premiumCost = createMemo(() => premium()?.cost)
-  const premiumBalance = createMemo(() => premium()?.remaining)
-  const num = createMemo(
+  const formatter = createMemo(
     () =>
       new Intl.NumberFormat(language.intl(), {
         maximumFractionDigits: 2,
@@ -107,15 +104,15 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         <span class="text-text-invert-strong">{cost()}</span>
         <span class="text-text-invert-base">{language.t("context.usage.cost")}</span>
       </div>
-      <Show when={premiumCost() !== undefined}>
+      <Show when={context()?.premium.cost !== undefined}>
         <div class="flex items-center gap-2">
-          <span class="text-text-invert-strong">{num().format(premiumCost() ?? 0)}</span>
+          <span class="text-text-invert-strong">{formatter().format(context()?.premium.cost ?? 0)}</span>
           <span class="text-text-invert-base">Premium cost</span>
         </div>
       </Show>
-      <Show when={premiumBalance() !== undefined}>
+      <Show when={context()?.premium.remaining !== undefined}>
         <div class="flex items-center gap-2">
-          <span class="text-text-invert-strong">{num().format(premiumBalance() ?? 0)}</span>
+          <span class="text-text-invert-strong">{formatter().format(context()?.premium.remaining ?? 0)}</span>
           <span class="text-text-invert-base">Premium balance</span>
         </div>
       </Show>

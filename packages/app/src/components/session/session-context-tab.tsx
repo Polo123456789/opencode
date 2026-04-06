@@ -135,7 +135,6 @@ export function SessionContextTab() {
   const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all(), sync.data.part))
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
-  const premium = createMemo(() => ctx()?.premium)
 
   const cost = createMemo(() => {
     return usd().format(metrics().totalCost)
@@ -282,11 +281,11 @@ export function SessionContextTab() {
           <For each={stats}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
           </For>
-          <Show when={premium()?.cost !== undefined}>
-            <Stat label="Premium Cost" value={formatter().number(premium()?.cost)} />
+          <Show when={ctx()?.premium.cost !== undefined}>
+            <Stat label="Premium Cost" value={formatter().number(ctx()?.premium.cost)} />
           </Show>
-          <Show when={premium()?.remaining !== undefined}>
-            <Stat label="Premium Balance" value={formatter().number(premium()?.remaining)} />
+          <Show when={ctx()?.premium.remaining !== undefined}>
+            <Stat label="Premium Balance" value={formatter().number(ctx()?.premium.remaining)} />
           </Show>
         </div>
 
