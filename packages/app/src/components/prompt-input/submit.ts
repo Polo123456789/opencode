@@ -4,6 +4,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
 import { batch, type Accessor } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -286,13 +287,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
   }
 
-  let submitting = false
+  const [state, setState] = createStore({
+    submitting: false,
+  })
 
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
-    if (submitting) return
-    submitting = true
+    if (state.submitting) return
+    setState("submitting", true)
 
     try {
 
@@ -583,12 +586,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         restoreInput()
       })
     } finally {
-      submitting = false
+      setState("submitting", false)
     }
   }
 
   return {
     abort,
     handleSubmit,
+    submitting: () => state.submitting,
   }
 }

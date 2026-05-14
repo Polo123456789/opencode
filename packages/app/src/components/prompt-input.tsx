@@ -285,7 +285,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       .join("")
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
-  const stopping = createMemo(() => working() && blank())
+  const stopping = createMemo(() => busy() && blank())
   const tip = () => {
     if (stopping()) {
       return (
@@ -1062,7 +1062,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return permission.isAutoAccepting(id, sdk.directory)
   })
 
-  const { abort, handleSubmit } = createPromptSubmit({
+  const { abort, handleSubmit, submitting } = createPromptSubmit({
     info,
     imageAttachments,
     commentCount,
@@ -1085,6 +1085,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
   })
+  const busy = createMemo(() => working() || submitting())
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
@@ -1137,7 +1138,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         return
       }
 
-      if (working()) {
+      if (busy()) {
         void abort()
         event.preventDefault()
         event.stopPropagation()
@@ -1203,7 +1204,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         event.preventDefault()
         return
       }
-      if (working()) {
+      if (busy()) {
         void abort()
         event.preventDefault()
       }
@@ -1233,7 +1234,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       event.preventDefault()
       if (event.repeat) return
       if (
-        working() &&
+        busy() &&
         prompt
           .current()
           .map((part) => ("content" in part ? part.content : ""))
@@ -1399,11 +1400,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
 
             <div class="flex items-center gap-1 pointer-events-auto">
-              <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+              <Tooltip placement="top" inactive={!busy() && blank()} value={tip()}>
                 <IconButton
                   data-action="prompt-submit"
                   type="submit"
-                  disabled={!working() && blank()}
+                  disabled={submitting() || (!busy() && blank())}
                   tabIndex={store.mode === "normal" ? undefined : -1}
                   icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
                   variant="primary"
