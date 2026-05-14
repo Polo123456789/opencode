@@ -286,295 +286,305 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
   }
 
+  let submitting = false
+
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
-    const currentPrompt = prompt.current()
-    const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
-    const images = input.imageAttachments().slice()
-    const mode = input.mode()
+    if (submitting) return
+    submitting = true
 
-    if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
-      if (input.working()) void abort()
-      return
-    }
+    try {
 
-    const currentModel = local.model.current()
-    const currentAgent = local.agent.current()
-    const variant = local.model.variant.current()
-    if (!currentModel || !currentAgent) {
-      showToast({
-        title: language.t("prompt.toast.modelAgentRequired.title"),
-        description: language.t("prompt.toast.modelAgentRequired.description"),
-      })
-      return
-    }
+      const currentPrompt = prompt.current()
+      const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
+      const images = input.imageAttachments().slice()
+      const mode = input.mode()
 
-    input.addToHistory(currentPrompt, mode)
-    input.resetHistoryNavigation()
+      if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
+        if (input.working()) void abort()
+        return
+      }
 
-    const projectDirectory = sdk.directory
-    const isNewSession = !params.id
-    const shouldAutoAccept = isNewSession && input.autoAccept()
-    const worktreeSelection = input.newSessionWorktree?.() || "main"
+      const currentModel = local.model.current()
+      const currentAgent = local.agent.current()
+      const variant = local.model.variant.current()
+      if (!currentModel || !currentAgent) {
+        showToast({
+          title: language.t("prompt.toast.modelAgentRequired.title"),
+          description: language.t("prompt.toast.modelAgentRequired.description"),
+        })
+        return
+      }
 
-    let sessionDirectory = projectDirectory
-    let client = sdk.client
+      input.addToHistory(currentPrompt, mode)
+      input.resetHistoryNavigation()
 
-    if (isNewSession) {
-      if (worktreeSelection === "create") {
-        const createdWorktree = await client.worktree
-          .create({ directory: projectDirectory })
-          .then((x) => x.data)
-          .catch((err) => {
+      const projectDirectory = sdk.directory
+      const isNewSession = !params.id
+      const shouldAutoAccept = isNewSession && input.autoAccept()
+      const worktreeSelection = input.newSessionWorktree?.() || "main"
+
+      let sessionDirectory = projectDirectory
+      let client = sdk.client
+
+      if (isNewSession) {
+        if (worktreeSelection === "create") {
+          const createdWorktree = await client.worktree
+            .create({ directory: projectDirectory })
+            .then((x) => x.data)
+            .catch((err) => {
+              showToast({
+                title: language.t("prompt.toast.worktreeCreateFailed.title"),
+                description: errorMessage(err),
+              })
+              return undefined
+            })
+
+          if (!createdWorktree?.directory) {
             showToast({
               title: language.t("prompt.toast.worktreeCreateFailed.title"),
+              description: language.t("common.requestFailed"),
+            })
+            return
+          }
+          WorktreeState.pending(createdWorktree.directory)
+          sessionDirectory = createdWorktree.directory
+        }
+
+        if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+          sessionDirectory = worktreeSelection
+        }
+
+        if (sessionDirectory !== projectDirectory) {
+          client = sdk.createClient({
+            directory: sessionDirectory,
+            throwOnError: true,
+          })
+          globalSync.child(sessionDirectory)
+        }
+
+        input.onNewSessionWorktreeReset?.()
+      }
+
+      let session = input.info()
+      if (!session && isNewSession) {
+        const created = await client.session
+          .create()
+          .then((x) => x.data ?? undefined)
+          .catch((err) => {
+            showToast({
+              title: language.t("prompt.toast.sessionCreateFailed.title"),
               description: errorMessage(err),
             })
             return undefined
           })
-
-        if (!createdWorktree?.directory) {
-          showToast({
-            title: language.t("prompt.toast.worktreeCreateFailed.title"),
-            description: language.t("common.requestFailed"),
-          })
-          return
+        if (created) {
+          seed(sessionDirectory, created)
+          session = created
+          if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
+          local.session.promote(sessionDirectory, session.id)
+          layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+          navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
         }
-        WorktreeState.pending(createdWorktree.directory)
-        sessionDirectory = createdWorktree.directory
+      }
+      if (!session) {
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: language.t("prompt.toast.promptSendFailed.description"),
+        })
+        return
       }
 
-      if (worktreeSelection !== "main" && worktreeSelection !== "create") {
-        sessionDirectory = worktreeSelection
+      const model = {
+        modelID: currentModel.id,
+        providerID: currentModel.provider.id,
+      }
+      const agent = currentAgent.name
+      const context = prompt.context.items().slice()
+      const draft: FollowupDraft = {
+        sessionID: session.id,
+        sessionDirectory,
+        prompt: currentPrompt,
+        context,
+        agent,
+        model,
+        variant,
       }
 
-      if (sessionDirectory !== projectDirectory) {
-        client = sdk.createClient({
-          directory: sessionDirectory,
-          throwOnError: true,
-        })
-        globalSync.child(sessionDirectory)
+      const clearInput = () => {
+        prompt.reset()
+        input.setMode("normal")
+        input.setPopover(null)
       }
 
-      input.onNewSessionWorktreeReset?.()
-    }
-
-    let session = input.info()
-    if (!session && isNewSession) {
-      const created = await client.session
-        .create()
-        .then((x) => x.data ?? undefined)
-        .catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.sessionCreateFailed.title"),
-            description: errorMessage(err),
-          })
-          return undefined
+      const restoreInput = () => {
+        prompt.set(currentPrompt, input.promptLength(currentPrompt))
+        input.setMode(mode)
+        input.setPopover(null)
+        requestAnimationFrame(() => {
+          const editor = input.editor()
+          if (!editor) return
+          editor.focus()
+          setCursorPosition(editor, input.promptLength(currentPrompt))
+          input.queueScroll()
         })
-      if (created) {
-        seed(sessionDirectory, created)
-        session = created
-        if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
-        local.session.promote(sessionDirectory, session.id)
-        layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
-        navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
       }
-    }
-    if (!session) {
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: language.t("prompt.toast.promptSendFailed.description"),
-      })
-      return
-    }
 
-    const model = {
-      modelID: currentModel.id,
-      providerID: currentModel.provider.id,
-    }
-    const agent = currentAgent.name
-    const context = prompt.context.items().slice()
-    const draft: FollowupDraft = {
-      sessionID: session.id,
-      sessionDirectory,
-      prompt: currentPrompt,
-      context,
-      agent,
-      model,
-      variant,
-    }
+      if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
+        input.onQueue?.(draft)
+        clearContext()
+        clearInput()
+        return
+      }
 
-    const clearInput = () => {
-      prompt.reset()
-      input.setMode("normal")
-      input.setPopover(null)
-    }
+      input.onSubmit?.()
 
-    const restoreInput = () => {
-      prompt.set(currentPrompt, input.promptLength(currentPrompt))
-      input.setMode(mode)
-      input.setPopover(null)
-      requestAnimationFrame(() => {
-        const editor = input.editor()
-        if (!editor) return
-        editor.focus()
-        setCursorPosition(editor, input.promptLength(currentPrompt))
-        input.queueScroll()
-      })
-    }
-
-    if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
-      input.onQueue?.(draft)
-      clearContext()
-      clearInput()
-      return
-    }
-
-    input.onSubmit?.()
-
-    if (mode === "shell") {
-      clearInput()
-      client.session
-        .shell({
-          sessionID: session.id,
-          agent,
-          model,
-          command: text,
-        })
-        .catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.shellSendFailed.title"),
-            description: errorMessage(err),
-          })
-          restoreInput()
-        })
-      return
-    }
-
-    if (text.startsWith("/")) {
-      const [cmdName, ...args] = text.split(" ")
-      const commandName = cmdName.slice(1)
-      const customCommand = sync.data.command.find((c) => c.name === commandName)
-      if (customCommand) {
+      if (mode === "shell") {
         clearInput()
         client.session
-          .command({
+          .shell({
             sessionID: session.id,
-            command: commandName,
-            arguments: args.join(" "),
             agent,
-            model: `${model.providerID}/${model.modelID}`,
-            variant,
-            parts: images.map((attachment) => ({
-              id: Identifier.ascending("part"),
-              type: "file" as const,
-              mime: attachment.mime,
-              url: attachment.dataUrl,
-              filename: attachment.filename,
-            })),
+            model,
+            command: text,
           })
           .catch((err) => {
             showToast({
-              title: language.t("prompt.toast.commandSendFailed.title"),
-              description: formatServerError(err, language.t, language.t("common.requestFailed")),
+              title: language.t("prompt.toast.shellSendFailed.title"),
+              description: errorMessage(err),
             })
             restoreInput()
           })
         return
       }
-    }
 
-    const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
-    const messageID = Identifier.ascending("message")
-
-    const removeOptimisticMessage = () => {
-      sync.session.optimistic.remove({
-        directory: sessionDirectory,
-        sessionID: session.id,
-        messageID,
-      })
-    }
-
-    removeCommentItems(commentItems)
-    clearInput()
-
-    const waitForWorktree = async () => {
-      const worktree = WorktreeState.get(sessionDirectory)
-      if (!worktree || worktree.status !== "pending") return true
-
-      if (sessionDirectory === projectDirectory) {
-        sync.set("session_status", session.id, { type: "busy" })
+      if (text.startsWith("/")) {
+        const [cmdName, ...args] = text.split(" ")
+        const commandName = cmdName.slice(1)
+        const customCommand = sync.data.command.find((c) => c.name === commandName)
+        if (customCommand) {
+          clearInput()
+          client.session
+            .command({
+              sessionID: session.id,
+              command: commandName,
+              arguments: args.join(" "),
+              agent,
+              model: `${model.providerID}/${model.modelID}`,
+              variant,
+              parts: images.map((attachment) => ({
+                id: Identifier.ascending("part"),
+                type: "file" as const,
+                mime: attachment.mime,
+                url: attachment.dataUrl,
+                filename: attachment.filename,
+              })),
+            })
+            .catch((err) => {
+              showToast({
+                title: language.t("prompt.toast.commandSendFailed.title"),
+                description: formatServerError(err, language.t, language.t("common.requestFailed")),
+              })
+              restoreInput()
+            })
+          return
+        }
       }
 
-      const controller = new AbortController()
-      const cleanup = () => {
+      const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+      const messageID = Identifier.ascending("message")
+
+      const removeOptimisticMessage = () => {
+        sync.session.optimistic.remove({
+          directory: sessionDirectory,
+          sessionID: session.id,
+          messageID,
+        })
+      }
+
+      removeCommentItems(commentItems)
+      clearInput()
+
+      const waitForWorktree = async () => {
+        const worktree = WorktreeState.get(sessionDirectory)
+        if (!worktree || worktree.status !== "pending") return true
+
+        if (sessionDirectory === projectDirectory) {
+          sync.set("session_status", session.id, { type: "busy" })
+        }
+
+        const controller = new AbortController()
+        const cleanup = () => {
+          if (sessionDirectory === projectDirectory) {
+            sync.set("session_status", session.id, { type: "idle" })
+          }
+          removeOptimisticMessage()
+          restoreCommentItems(commentItems)
+          restoreInput()
+        }
+
+        pending.set(session.id, { abort: controller, cleanup })
+
+        const abortWait = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
+          if (controller.signal.aborted) {
+            resolve({ status: "failed", message: "aborted" })
+            return
+          }
+          controller.signal.addEventListener(
+            "abort",
+            () => {
+              resolve({ status: "failed", message: "aborted" })
+            },
+            { once: true },
+          )
+        })
+
+        const timeoutMs = 5 * 60 * 1000
+        const timer = { id: undefined as number | undefined }
+        const timeout = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
+          timer.id = window.setTimeout(() => {
+            resolve({
+              status: "failed",
+              message: language.t("workspace.error.stillPreparing"),
+            })
+          }, timeoutMs)
+        })
+
+        const result = await Promise.race([WorktreeState.wait(sessionDirectory), abortWait, timeout]).finally(() => {
+          if (timer.id === undefined) return
+          clearTimeout(timer.id)
+        })
+        pending.delete(session.id)
+        if (controller.signal.aborted) return false
+        if (result.status === "failed") throw new Error(result.message)
+        return true
+      }
+
+      void sendFollowupDraft({
+        client,
+        sync,
+        globalSync,
+        draft,
+        messageID,
+        optimisticBusy: sessionDirectory === projectDirectory,
+        before: waitForWorktree,
+      }).catch((err) => {
+        pending.delete(session.id)
         if (sessionDirectory === projectDirectory) {
           sync.set("session_status", session.id, { type: "idle" })
         }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
         removeOptimisticMessage()
         restoreCommentItems(commentItems)
         restoreInput()
-      }
-
-      pending.set(session.id, { abort: controller, cleanup })
-
-      const abortWait = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
-        if (controller.signal.aborted) {
-          resolve({ status: "failed", message: "aborted" })
-          return
-        }
-        controller.signal.addEventListener(
-          "abort",
-          () => {
-            resolve({ status: "failed", message: "aborted" })
-          },
-          { once: true },
-        )
       })
-
-      const timeoutMs = 5 * 60 * 1000
-      const timer = { id: undefined as number | undefined }
-      const timeout = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
-        timer.id = window.setTimeout(() => {
-          resolve({
-            status: "failed",
-            message: language.t("workspace.error.stillPreparing"),
-          })
-        }, timeoutMs)
-      })
-
-      const result = await Promise.race([WorktreeState.wait(sessionDirectory), abortWait, timeout]).finally(() => {
-        if (timer.id === undefined) return
-        clearTimeout(timer.id)
-      })
-      pending.delete(session.id)
-      if (controller.signal.aborted) return false
-      if (result.status === "failed") throw new Error(result.message)
-      return true
+    } finally {
+      submitting = false
     }
-
-    void sendFollowupDraft({
-      client,
-      sync,
-      globalSync,
-      draft,
-      messageID,
-      optimisticBusy: sessionDirectory === projectDirectory,
-      before: waitForWorktree,
-    }).catch((err) => {
-      pending.delete(session.id)
-      if (sessionDirectory === projectDirectory) {
-        sync.set("session_status", session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      removeOptimisticMessage()
-      restoreCommentItems(commentItems)
-      restoreInput()
-    })
   }
 
   return {
